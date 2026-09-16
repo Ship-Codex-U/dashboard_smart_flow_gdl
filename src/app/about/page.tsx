@@ -1,4 +1,4 @@
-import { Users, GraduationCap, Target, Building2 } from "lucide-react";
+import { GraduationCap, Target } from "lucide-react";
 
 export default function AboutPage() {
   return (

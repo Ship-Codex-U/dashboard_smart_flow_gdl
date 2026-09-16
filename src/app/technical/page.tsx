@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTrafficSimulation } from '@/services/useTrafficSimulation';
-import { Timer, BrainCircuit, Activity, Server, Cpu, Database } from 'lucide-react';
+import { BrainCircuit, Activity, Server, Cpu, Database } from 'lucide-react';
 
 export default function TechnicalDashboard() {
   const { globalEvent } = useTrafficSimulation();
