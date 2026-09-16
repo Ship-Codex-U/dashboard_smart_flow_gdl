@@ -5,7 +5,7 @@ import { useTrafficSimulation } from '@/services/useTrafficSimulation';
 import { BrainCircuit, Activity, Server, Cpu, Database } from 'lucide-react';
 
 export default function TechnicalDashboard() {
-  const { globalEvent } = useTrafficSimulation();
+  const { weather, traffic } = useTrafficSimulation();
 
   // Simulación de log de telemetría estilo terminal
   const [logs, setLogs] = useState<string[]>([]);
@@ -16,7 +16,7 @@ export default function TechnicalDashboard() {
         '[NET] SYN_ACK de Nodo INT-003 (14ms)',
         '[ALG] Recalculando rutas óptimas (V-1024)...',
         '[DB] Sincronizando estado de intersecciones...',
-        `[SYS] Evento global detectado: ${globalEvent}`,
+        `[SYS] Clima: ${weather}, Tráfico: ${traffic}`,
         '[NET] Pérdida de paquetes 0.01% en Sector 4',
         '[ALG] Mutación genética aplicada: fitness +0.02',
         '[SENS] Leyendo densidades de cámara de tráfico 4',
@@ -31,7 +31,7 @@ export default function TechnicalDashboard() {
     }, 1200);
 
     return () => clearInterval(interval);
-  }, [globalEvent]);
+  }, [weather, traffic]);
 
   return (
     <div className="flex flex-col h-full space-y-6">
