@@ -11,7 +11,7 @@ const Map = dynamic(() => import('@/components/Map'), {
 });
 
 export default function LaboratoryPage() {
-  const { globalEvent } = useTrafficSimulation();
+  const { weather, traffic } = useTrafficSimulation();
 
   return (
     <div className="flex flex-col h-full min-h-[calc(100vh-2rem)] space-y-6">
@@ -33,18 +33,18 @@ export default function LaboratoryPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-slate-400"/> <span className="text-sm font-medium">Hora</span></div>
-                <span className="text-sm font-bold text-slate-700">{globalEvent === 'RUSH_HOUR' ? '08:30 AM (Pico)' : '01:15 PM'}</span>
+                <span className="text-sm font-bold text-slate-700">{traffic === 'RUSH_HOUR' ? '08:30 AM (Pico)' : '01:15 PM'}</span>
               </div>
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2">
-                  {globalEvent === 'STORM' ? <CloudRain className="w-4 h-4 text-slate-400"/> : <Cloud className="w-4 h-4 text-slate-400"/>} 
+                  {weather === 'STORM' ? <CloudRain className="w-4 h-4 text-slate-400"/> : <Cloud className="w-4 h-4 text-slate-400"/>} 
                   <span className="text-sm font-medium">Clima</span>
                 </div>
-                <span className="text-sm font-bold text-blue-600">{globalEvent === 'STORM' ? 'Tormenta' : 'Despejado'}</span>
+                <span className="text-sm font-bold text-blue-600">{weather === 'STORM' ? 'Tormenta' : 'Despejado'}</span>
               </div>
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2"><Wind className="w-4 h-4 text-slate-400"/> <span className="text-sm font-medium">Viento</span></div>
-                <span className="text-sm font-bold text-slate-700">{globalEvent === 'STORM' ? '45 km/h' : '14 km/h'}</span>
+                <span className="text-sm font-bold text-slate-700">{weather === 'STORM' ? '45 km/h' : '14 km/h'}</span>
               </div>
             </div>
           </div>
