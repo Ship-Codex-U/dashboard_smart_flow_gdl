@@ -68,7 +68,7 @@ export function useTrafficSimulation() {
             .from('traffic_readings')
             .select('vehicles_count, avg_speed_kmh, congestion_level, weather, is_peak_hour')
             .eq('intersection_id', id)
-            .order('created_at', { ascending: false })
+            .order('timestamp', { ascending: false })
             .limit(1)
             .single();
 
