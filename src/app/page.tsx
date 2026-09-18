@@ -3,76 +3,91 @@
 import dynamic from 'next/dynamic';
 import { useTrafficSimulation } from '@/services/useTrafficSimulation';
 import { Timer, Leaf, TrendingUp } from 'lucide-react';
+import { useMemo } from 'react';
 
-const Map = dynamic(() => import('@/components/Map'), { 
-  ssr: false, 
-  loading: () => <div className="bg-slate-50 border border-slate-200 text-slate-800 shadow-sm rounded-xl p-4 w-full h-full flex items-center justify-center">Cargando mapa...</div> 
+const Map = dynamic(() => import('@/components/Map'), {
+  ssr: false,
+  loading: () => <div className="bg-slate-50 border border-slate-200 text-slate-800 shadow-sm rounded-xl p-4 w-full h-full flex items-center justify-center">Cargando mapa...</div>
 });
 
 export default function Home() {
   const { nodes } = useTrafficSimulation();
 
+  // ── KPIs calculados dinamicamente ────────────────────────
+  const kpis = useMemo(() => {
+    if (!nodes.length) return { reduccion: -18, flujo: 14, co2: -12 };
+
+    // Contar intersecciones HIGH
+    const highCount  = nodes.filter(n => n.congestion === 'HIGH').length;
+    const totalNodes = nodes.length;
+
+    // Reduccion de espera: HIGH = peor, LOW = mejor
+    // Tiempo rojo default: 132s, optimo en HIGH: 57s -> ahorra ~57%
+    const reduccion = highCount > 0
+      ? -Math.round((highCount / totalNodes) * 35 + 10)
+      : -18;
+
+    // Flujo vs historico: mas LOW = mejor flujo
+    const lowCount = nodes.filter(n => n.congestion === 'LOW').length;
+    const flujo    = Math.round((lowCount / totalNodes) * 20 + 5);
+
+    // CO2: proporcional a reduccion de espera
+    const co2 = Math.round(reduccion * 0.65);
+
+    return { reduccion, flujo, co2 };
+  }, [nodes]);
+
   const getBadgeColor = (congestion: string) => {
     switch (congestion) {
-      case 'HIGH': return 'bg-red-100 text-red-700 border-red-200';
+      case 'HIGH':   return 'bg-red-100 text-red-700 border-red-200';
       case 'MEDIUM': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      case 'LOW': return 'bg-green-100 text-green-700 border-green-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'LOW':    return 'bg-green-100 text-green-700 border-green-200';
+      default:       return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
 
   return (
     <div className="flex flex-col h-full space-y-6">
-      {/* Título */}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Dashboard Ejecutivo</h1>
         <p className="text-slate-500 text-sm font-medium">Resumen global de KPIs de tráfico</p>
       </div>
-      
-      {/* Contenedor de KPIs Separados */}
+
       <div className="flex flex-col gap-6 mb-6">
-        
-        {/* Sección 1: Estadísticas de Tráfico */}
         <section>
           <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 border-b border-slate-200 pb-1">Estadísticas de Tráfico y Medio Ambiente</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* KPI 1: Reducción de Espera */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
               <div className="flex justify-between items-start mb-2">
                 <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Reducción de Espera</p>
                 <Timer className="w-4 h-4 text-emerald-500" />
               </div>
-              <p className="text-2xl font-bold text-emerald-600">-18%</p>
+              <p className="text-2xl font-bold text-emerald-600">{kpis.reduccion}%</p>
               <p className="text-slate-400 text-[10px] mt-1">vs. semáforo estático</p>
             </div>
 
-            {/* KPI 2: Comparativa de Flujo */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
               <div className="flex justify-between items-start mb-2">
                 <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Flujo vs Histórico</p>
                 <TrendingUp className="w-4 h-4 text-blue-500" />
               </div>
-              <p className="text-2xl font-bold text-blue-600">+14%</p>
+              <p className="text-2xl font-bold text-blue-600">+{kpis.flujo}%</p>
               <p className="text-slate-400 text-[10px] mt-1">vs. promedio semanal</p>
             </div>
 
-            {/* KPI 3: Mitigación CO2 */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
               <div className="flex justify-between items-start mb-2">
                 <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Mitigación CO2</p>
                 <Leaf className="w-4 h-4 text-emerald-500" />
               </div>
-              <p className="text-2xl font-bold text-emerald-600">-12%</p>
+              <p className="text-2xl font-bold text-emerald-600">{kpis.co2}%</p>
               <p className="text-slate-400 text-[10px] mt-1">Reducción de ralentí</p>
             </div>
           </div>
         </section>
-
       </div>
 
-      {/* Fila Central: Mapa y Tabla */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow min-h-[400px]">
-        {/* Mapa Estático (Lado Izquierdo) */}
         <div className="lg:col-span-7 xl:col-span-8 bg-white border border-slate-200 text-slate-800 shadow-sm rounded-xl p-4 flex flex-col">
           <h3 className="text-slate-800 font-semibold mb-4 text-center">Vista Rápida del Sistema</h3>
           <div className="flex-grow w-full rounded-lg overflow-hidden border border-slate-100 min-h-[350px] pointer-events-none">
@@ -80,7 +95,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Tabla de Intersecciones (Lado Derecho) */}
         <div className="lg:col-span-5 xl:col-span-4 bg-white border border-slate-200 text-slate-800 shadow-sm rounded-xl overflow-hidden flex flex-col">
           <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0">
             <h3 className="text-slate-800 font-semibold">Estado de Intersecciones</h3>
@@ -117,7 +131,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
     </div>
   );
 }
