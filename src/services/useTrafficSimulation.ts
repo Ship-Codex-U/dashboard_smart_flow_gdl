@@ -1,15 +1,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-// ─────────────────────────────────────────────────────────────
-// CLIENTE SUPABASE
-// ─────────────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ipcunenaytijdproskxf.supabase.co',
-  process.env.NEXT_PUBLIC_SUPABASE_KEY || 'sb_publishable_tUdmn3h_fIx9zERQweNTyA_HYqThsb4'
-);
 
 export type CongestionLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 export type WeatherEvent = 'CLEAR' | 'STORM';
@@ -26,10 +17,6 @@ export interface IntersectionData {
   is_peak_hour: boolean;
 }
 
-// ─────────────────────────────────────────────────────────────
-// CONFIGURACION DE INTERSECCIONES
-// Coordenadas verificadas en Google Maps Street View
-// ─────────────────────────────────────────────────────────────
 const INTERSECTION_CONFIG: Record<string, { name: string; coords: [number, number] }> = {
   'INT-001': { name: 'Av. Vallarta - Av. Yaquis',              coords: [20.6743,    -103.3937]    },
   'INT-002': { name: 'Av. López Mateos - Av. de las Américas', coords: [20.6963551, -103.3734237] },
@@ -40,75 +27,82 @@ const INTERSECTION_CONFIG: Record<string, { name: string; coords: [number, numbe
 
 const DEFAULT_NODES: IntersectionData[] = Object.entries(INTERSECTION_CONFIG).map(([id, config]) => ({
   id,
-  name:        config.name,
-  coords:      config.coords,
-  congestion:  'LOW',
-  vehicles:    0,
-  speed:       50,
-  weather:     'clear',
+  name:         config.name,
+  coords:       config.coords,
+  congestion:   'LOW',
+  vehicles:     0,
+  speed:        50,
+  weather:      'clear',
   is_peak_hour: false,
 }));
 
+// Crear cliente de Supabase solo en el browser
+function createSupabaseClient() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    return createClient(
+      'https://ipcunenaytijdproskxf.supabase.co',
+      'sb_publishable_tUdmn3h_fIx9zERQweNTyA_HYqThsb4'
+    );
+  } catch {
+    return null;
+  }
+}
 
-// ─────────────────────────────────────────────────────────────
-// HOOK PRINCIPAL
-// ─────────────────────────────────────────────────────────────
 export function useTrafficSimulation() {
-  const [nodes, setNodes]   = useState<IntersectionData[]>(DEFAULT_NODES);
+  const [nodes, setNodes]     = useState<IntersectionData[]>(DEFAULT_NODES);
   const [weather, setWeather] = useState<WeatherEvent>('CLEAR');
   const [traffic, setTraffic] = useState<TrafficEvent>('NORMAL');
 
-  // ── Cargar ultimas lecturas de cada interseccion ────────────
-  const fetchLatestReadings = async () => {
-    try {
-      const updates: Record<string, Partial<IntersectionData>> = {};
+  // Cargar datos iniciales y suscribirse a cambios
+  useEffect(() => {
+    const sb = createSupabaseClient();
+    if (!sb) return;
 
-      for (const id of Object.keys(INTERSECTION_CONFIG)) {
-        const { data, error } = await supabase
-          .from('traffic_readings')
-          .select('vehicles_count, avg_speed_kmh, congestion_level, weather, is_peak_hour')
-          .eq('intersection_id', id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
+    // Cargar ultimas lecturas
+    const fetchLatest = async () => {
+      try {
+        for (const id of Object.keys(INTERSECTION_CONFIG)) {
+          const { data, error } = await sb
+            .from('traffic_readings')
+            .select('vehicles_count, avg_speed_kmh, congestion_level, weather, is_peak_hour')
+            .eq('intersection_id', id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
 
-        if (!error && data) {
-          updates[id] = {
-            vehicles:     data.vehicles_count,
-            speed:        Math.round(data.avg_speed_kmh),
-            congestion:   data.congestion_level.toUpperCase() as CongestionLevel,
-            weather:      data.weather,
-            is_peak_hour: data.is_peak_hour,
-          };
+          if (!error && data) {
+            setNodes(prev => prev.map(node =>
+              node.id === id
+                ? {
+                    ...node,
+                    vehicles:     data.vehicles_count,
+                    speed:        Math.round(data.avg_speed_kmh),
+                    congestion:   data.congestion_level.toUpperCase() as CongestionLevel,
+                    weather:      data.weather,
+                    is_peak_hour: data.is_peak_hour,
+                  }
+                : node
+            ));
+          }
         }
+      } catch (err) {
+        console.error('Error fetching readings:', err);
       }
+    };
 
-      setNodes(prev => prev.map(node => ({
-        ...node,
-        ...(updates[node.id] || {}),
-      })));
+    fetchLatest();
 
-    } catch (err) {
-      console.error('Error fetching readings:', err);
-    }
-  };
-
-  // ── Carga inicial ───────────────────────────────────────────
-  useEffect(() => {
-    fetchLatestReadings();
-  }, []);
-
-  // ── Suscripcion en tiempo real con Supabase Realtime ────────
-  useEffect(() => {
-    const channel = supabase
-      .channel('traffic_readings_realtime')
+    // Suscribirse a cambios en tiempo real
+    const channel = sb
+      .channel('traffic_realtime')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'traffic_readings' },
-        (payload) => {
-          const row = payload.new as any;
+        (payload: any) => {
+          const row = payload.new;
           const id  = row.intersection_id;
-
           if (!INTERSECTION_CONFIG[id]) return;
 
           setNodes(prev => prev.map(node =>
@@ -128,11 +122,10 @@ export function useTrafficSimulation() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      sb.removeChannel(channel);
     };
   }, []);
 
-  // ── Eventos del laboratorio (simulacion manual) ─────────────
   const triggerWeather = (event: WeatherEvent) => setWeather(event);
   const triggerTraffic = (event: TrafficEvent) => setTraffic(event);
 
