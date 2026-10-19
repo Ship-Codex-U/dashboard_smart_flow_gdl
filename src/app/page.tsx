@@ -11,22 +11,33 @@ const Map = dynamic(() => import('@/components/Map'), {
 });
 
 export default function Home() {
-  const { nodes } = useTrafficSimulation();
+  const { nodes, reduccionEsperaVivo, muestrasVivo } = useTrafficSimulation();
 
   // ── KPIs ──────────────────────────────────────────────────
-  // Reduccion de espera y mitigacion de CO2: resultado real y
-  // validado del experimento del Algoritmo Genetico (30 corridas
-  // reales en produccion, media ponderada por volumen vehicular,
-  // IC 95% = [23.90%, 28.27%]). Ver metodologia completa en el
-  // informe final. No son valores inventados ni recalculados en
-  // el navegador: son el mismo hallazgo fijo reportado en el PDF.
+  // Reduccion de espera EN VIVO: promedio real, recalculado cada
+  // 15s, de las optimizaciones del Algoritmo Genetico de los
+  // ultimos 5 minutos en produccion (funcion SQL
+  // kpi_reduccion_espera_vivo sobre la tabla traffic_lights).
+  // Misma formula validada en el informe (reduccion de tiempo
+  // rojo vs. el default de 45s de verde). Mientras carga el
+  // primer dato, se muestra el resultado del experimento
+  // controlado (26.09%, N=30, IC 95% [23.90%, 28.27%]) como
+  // referencia de respaldo, no como placeholder inventado.
+  //
+  // CO2: bajo el mismo supuesto de proporcionalidad documentado
+  // en el informe (combustible de ralenti proporcional al tiempo
+  // de espera), la reduccion porcentual de CO2 es igual a la de
+  // tiempo de espera.
   //
   // "Flujo vs Historico" se elimino: no existe en el sistema una
   // metodologia de medicion real para esa metrica (ver informe,
   // seccion de Resultados) — el simulador de sensores genera el
   // volumen vehicular de forma independiente a la optimizacion de
   // semaforos, por lo que no hay relacion causal que medir.
-  const kpis = useMemo(() => ({ reduccion: -26.09, co2: -26.09 }), []);
+  const kpis = useMemo(() => {
+    const reduccion = reduccionEsperaVivo ?? 26.09;
+    return { reduccion: -reduccion, co2: -reduccion };
+  }, [reduccionEsperaVivo]);
 
   // Promedio de vehiculos en vivo (si viene de las 5 intersecciones
   // reales via Supabase): metrica real, medida, no derivada.
@@ -61,7 +72,11 @@ export default function Home() {
                 <Timer className="w-4 h-4 text-emerald-500" />
               </div>
               <p className="text-2xl font-bold text-emerald-600">{kpis.reduccion}%</p>
-              <p className="text-slate-400 text-[10px] mt-1">vs. semáforo estático</p>
+              <p className="text-slate-400 text-[10px] mt-1">
+                {reduccionEsperaVivo !== null
+                  ? `en vivo · ${muestrasVivo.toLocaleString()} optimizaciones, 5 min`
+                  : 'cargando datos en vivo…'}
+              </p>
             </div>
 
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
