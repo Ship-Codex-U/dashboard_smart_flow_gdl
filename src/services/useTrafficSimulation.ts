@@ -60,11 +60,32 @@ export function useTrafficSimulation() {
   const [nodes, setNodes]     = useState<IntersectionData[]>(DEFAULT_NODES);
   const [weather, setWeather] = useState<WeatherEvent>('CLEAR');
   const [traffic, setTraffic] = useState<TrafficEvent>('NORMAL');
+  // Reduccion de espera EN VIVO: promedio real de las optimizaciones del
+  // Algoritmo Genetico de los ultimos 5 minutos, calculado en la base de
+  // datos (funcion kpi_reduccion_espera_vivo). Null mientras carga o si
+  // no hay suficientes datos recientes.
+  const [reduccionEsperaVivo, setReduccionEsperaVivo] = useState<number | null>(null);
+  const [muestrasVivo, setMuestrasVivo]                = useState<number>(0);
 
   // Cargar datos iniciales y suscribirse a cambios
   useEffect(() => {
     const sb = createSupabaseClient();
     if (!sb) return;
+
+    const fetchKpiVivo = async () => {
+      try {
+        const { data, error } = await sb.rpc('kpi_reduccion_espera_vivo', { minutos: 5 });
+        if (!error && data && data[0] && data[0].mejora_pct !== null) {
+          setReduccionEsperaVivo(Number(data[0].mejora_pct));
+          setMuestrasVivo(Number(data[0].muestras));
+        }
+      } catch (err) {
+        console.error('Error fetching KPI en vivo:', err);
+      }
+    };
+
+    fetchKpiVivo();
+    const kpiInterval = setInterval(fetchKpiVivo, 15000); // refresca cada 15s
 
     // Cargar ultimas lecturas
     const fetchLatest = async () => {
@@ -128,6 +149,7 @@ export function useTrafficSimulation() {
       .subscribe();
 
     return () => {
+      clearInterval(kpiInterval);
       sb.removeChannel(channel);
     };
   }, []);
@@ -135,5 +157,8 @@ export function useTrafficSimulation() {
   const triggerWeather = (event: WeatherEvent) => setWeather(event);
   const triggerTraffic = (event: TrafficEvent) => setTraffic(event);
 
-  return { nodes, weather, traffic, triggerWeather, triggerTraffic };
+  return {
+    nodes, weather, traffic, triggerWeather, triggerTraffic,
+    reduccionEsperaVivo, muestrasVivo,
+  };
 }
