@@ -36,15 +36,21 @@ const DEFAULT_NODES: IntersectionData[] = Object.entries(INTERSECTION_CONFIG).ma
   is_peak_hour: false,
 }));
 
-// Crear cliente de Supabase solo en el browser
+// Crear cliente de Supabase solo en el browser.
+// URL y anon key son valores PÚBLICOS por diseño (no son secretos:
+// el acceso real lo controla RLS en la base de datos), pero deben
+// apuntar al proyecto Supabase actual, no a uno viejo/migrado.
+// Configurables por variable de entorno; si no están definidas se
+// usa el proyecto activo (smartflow-gdl-v2) como valor por defecto.
 function createSupabaseClient() {
   if (typeof window === 'undefined') return null;
   try {
     const { createClient } = require('@supabase/supabase-js');
-    return createClient(
-      'https://ipcunenaytijdproskxf.supabase.co',
-      'sb_publishable_tUdmn3h_fIx9zERQweNTyA_HYqThsb4'
-    );
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      || 'https://fejxijloxyxzdshgymvz.supabase.co';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlanhpamxveHl4emRzaGd5bXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNTAwNjUsImV4cCI6MjEwNzkyNjA2NX0.v1LRG8HeJ_UjwMHGzTfR8bYRCAmTlSFryXKxAOpCJT8';
+    return createClient(url, key);
   } catch {
     return null;
   }
