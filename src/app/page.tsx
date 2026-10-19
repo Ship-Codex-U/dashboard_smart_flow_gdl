@@ -13,28 +13,26 @@ const Map = dynamic(() => import('@/components/Map'), {
 export default function Home() {
   const { nodes } = useTrafficSimulation();
 
-  // ── KPIs calculados dinamicamente ────────────────────────
-  const kpis = useMemo(() => {
-    if (!nodes.length) return { reduccion: -18, flujo: 14, co2: -12 };
+  // ── KPIs ──────────────────────────────────────────────────
+  // Reduccion de espera y mitigacion de CO2: resultado real y
+  // validado del experimento del Algoritmo Genetico (30 corridas
+  // reales en produccion, media ponderada por volumen vehicular,
+  // IC 95% = [23.90%, 28.27%]). Ver metodologia completa en el
+  // informe final. No son valores inventados ni recalculados en
+  // el navegador: son el mismo hallazgo fijo reportado en el PDF.
+  //
+  // "Flujo vs Historico" se elimino: no existe en el sistema una
+  // metodologia de medicion real para esa metrica (ver informe,
+  // seccion de Resultados) — el simulador de sensores genera el
+  // volumen vehicular de forma independiente a la optimizacion de
+  // semaforos, por lo que no hay relacion causal que medir.
+  const kpis = useMemo(() => ({ reduccion: -26.09, co2: -26.09 }), []);
 
-    // Contar intersecciones HIGH
-    const highCount  = nodes.filter(n => n.congestion === 'HIGH').length;
-    const totalNodes = nodes.length;
-
-    // Reduccion de espera: HIGH = peor, LOW = mejor
-    // Tiempo rojo default: 132s, optimo en HIGH: 57s -> ahorra ~57%
-    const reduccion = highCount > 0
-      ? -Math.round((highCount / totalNodes) * 35 + 10)
-      : -18;
-
-    // Flujo vs historico: mas LOW = mejor flujo
-    const lowCount = nodes.filter(n => n.congestion === 'LOW').length;
-    const flujo    = Math.round((lowCount / totalNodes) * 20 + 5);
-
-    // CO2: proporcional a reduccion de espera
-    const co2 = Math.round(reduccion * 0.65);
-
-    return { reduccion, flujo, co2 };
+  // Promedio de vehiculos en vivo (si viene de las 5 intersecciones
+  // reales via Supabase): metrica real, medida, no derivada.
+  const promedioVehiculos = useMemo(() => {
+    if (!nodes.length) return 0;
+    return Math.round(nodes.reduce((sum, n) => sum + n.vehicles, 0) / nodes.length);
   }, [nodes]);
 
   const getBadgeColor = (congestion: string) => {
@@ -68,11 +66,11 @@ export default function Home() {
 
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
               <div className="flex justify-between items-start mb-2">
-                <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Flujo vs Histórico</p>
+                <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Vehículos en Vivo</p>
                 <TrendingUp className="w-4 h-4 text-blue-500" />
               </div>
-              <p className="text-2xl font-bold text-blue-600">+{kpis.flujo}%</p>
-              <p className="text-slate-400 text-[10px] mt-1">vs. promedio semanal</p>
+              <p className="text-2xl font-bold text-blue-600">{promedioVehiculos}</p>
+              <p className="text-slate-400 text-[10px] mt-1">promedio actual, 5 intersecciones</p>
             </div>
 
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
