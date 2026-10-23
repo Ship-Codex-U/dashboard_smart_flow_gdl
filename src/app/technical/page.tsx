@@ -19,10 +19,17 @@ function getSupabase() {
   } catch { return null; }
 }
 
-// URL publica del microservicio de prediccion en Railway. Se usa solo para
-// medir latencia real (GET /health), nunca para leer datos sensibles.
-const PREDICCION_HEALTH_URL = (process.env.NEXT_PUBLIC_PREDICCION_URL
-  || 'https://responsible-victory-production-c29a.up.railway.app') + '/health';
+// URLs publicas de los tres microservicios en Railway. Solo se usan para medir
+// latencia real (GET /health, ligero y sin datos sensibles).
+// La meta de cada servicio es la misma del informe (matriz de pruebas CP-06a/b/c).
+const SERVICIOS_LATENCIA = [
+  { id: 'ingesta',      nombre: 'Ingesta',      meta: 200,
+    url: (process.env.NEXT_PUBLIC_INGESTA_URL || 'https://smartflow-gdl-production.up.railway.app') + '/health' },
+  { id: 'prediccion',   nombre: 'Predicción',   meta: 1000,
+    url: (process.env.NEXT_PUBLIC_PREDICCION_URL || 'https://responsible-victory-production-c29a.up.railway.app') + '/health' },
+  { id: 'optimizacion', nombre: 'Optimización', meta: 5000,
+    url: (process.env.NEXT_PUBLIC_OPTIMIZACION_URL || 'https://servicio-de-optimizacion-production.up.railway.app') + '/health' },
+];
 
 interface TrafficLight {
   intersection_id: string;
@@ -40,8 +47,7 @@ export default function TechnicalDashboard() {
   const { weather, traffic } = useTrafficSimulation();
   const [logs, setLogs]           = useState<string[]>([]);
   const [fitness, setFitness]     = useState<number | null>(null);
-  const [latencia, setLatencia]   = useState<number | null>(null);
-  const [muestrasLatencia, setMuestrasLatencia] = useState<number>(0);
+  const [latencias, setLatencias]   = useState<Record<string, { p95: number; n: number }>>({});
   const [semaforos, setSemaforos] = useState<TrafficLight[]>([]);
 
   // ── Obtener tiempos optimizados de semaforos ────────────
@@ -83,33 +89,33 @@ export default function TechnicalDashboard() {
   }, []);
 
   // ── Latencia real, medida en vivo desde el navegador ────
-  // Antes era un numero aleatorio (110-170ms) sin relacion con ningun
-  // dato real. Ahora se mide el tiempo de ida y vuelta real de un GET a
-  // /health del servicio de prediccion en Railway, y se reporta el P95
-  // sobre las ultimas 20 mediciones (ventana movil, se refresca cada 5s).
+  // Tiempo de ida y vuelta real de un GET a /health de cada microservicio en
+  // Railway (incluye la red del navegador al servicio). Se reporta el P95 sobre
+  // las ultimas 20 mediciones de cada uno (ventana movil, cada 5 s). Si un
+  // ping falla no se inventa un numero: se conserva el ultimo valor real.
   useEffect(() => {
-    const muestras: number[] = [];
+    const muestras: Record<string, number[]> = {};
 
-    const medirLatencia = async () => {
+    const medir = async (srv: typeof SERVICIOS_LATENCIA[number]) => {
       const t0 = performance.now();
       try {
-        await fetch(PREDICCION_HEALTH_URL, { cache: 'no-store' });
+        const resp = await fetch(srv.url, { cache: 'no-store' });
+        if (!resp.ok) throw new Error('http ' + resp.status);
         const rtt = performance.now() - t0;
-        muestras.push(rtt);
-        if (muestras.length > 20) muestras.shift();
-
-        const ordenadas = [...muestras].sort((a, b) => a - b);
-        const idxP95 = Math.min(ordenadas.length - 1, Math.floor(ordenadas.length * 0.95));
-        setLatencia(Math.round(ordenadas[idxP95]));
-        setMuestrasLatencia(muestras.length);
+        const m = (muestras[srv.id] ||= []);
+        m.push(rtt);
+        if (m.length > 20) m.shift();
+        const ord = [...m].sort((a, b) => a - b);
+        const idxP95 = Math.min(ord.length - 1, Math.floor(ord.length * 0.95));
+        setLatencias(prev => ({ ...prev, [srv.id]: { p95: Math.round(ord[idxP95]), n: m.length } }));
       } catch {
-        // Si falla el ping (red, servicio dormido, etc.) no se inventa un
-        // numero: se deja el ultimo valor real conocido.
+        // sin dato nuevo
       }
     };
 
-    medirLatencia();
-    const interval = setInterval(medirLatencia, 5000);
+    const medirTodos = () => { SERVICIOS_LATENCIA.forEach(medir); };
+    medirTodos();
+    const interval = setInterval(medirTodos, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -198,15 +204,35 @@ export default function TechnicalDashboard() {
 
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
           <div className="flex justify-between items-start mb-2">
-            <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Latencia API (P95)</p>
+            <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Latencia API (P95 por servicio)</p>
             <Activity className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold text-slate-700">{latencia !== null ? `${latencia} ms` : '—'}</p>
-          <p className="text-slate-400 text-[10px] mt-1">
-            {latencia !== null
-              ? `en vivo · P95 de ${muestrasLatencia} mediciones reales · meta: < 200ms`
-              : 'midiendo latencia real…'}
-          </p>
+          {(() => {
+            const vals = SERVICIOS_LATENCIA.map(x => latencias[x.id]?.p95).filter((v): v is number => v !== undefined);
+            const prom = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+            return (
+              <>
+                <p className="text-2xl font-bold text-slate-700">{prom !== null ? `${prom} ms` : '—'}</p>
+                <p className="text-slate-400 text-[10px] mt-1">
+                  {prom !== null ? `promedio del P95 de ${vals.length} servicios · en vivo` : 'midiendo latencia real…'}
+                </p>
+                <div className="mt-2 space-y-0.5">
+                  {SERVICIOS_LATENCIA.map(x => {
+                    const l = latencias[x.id];
+                    const ok = l ? l.p95 <= x.meta : null;
+                    return (
+                      <div key={x.id} className="flex justify-between text-[10px]">
+                        <span className="text-slate-500">{x.nombre} <span className="text-slate-400">(meta ≤ {x.meta.toLocaleString('es-MX')} ms)</span></span>
+                        <span className={ok === null ? 'text-slate-400' : ok ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'}>
+                          {l ? `${l.p95} ms` : '—'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
