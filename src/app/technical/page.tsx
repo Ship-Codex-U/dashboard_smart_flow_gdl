@@ -4,16 +4,25 @@ import { useState, useEffect } from 'react';
 import { useTrafficSimulation } from '@/services/useTrafficSimulation';
 import { BrainCircuit, Activity, Server, Cpu, Database, Timer } from 'lucide-react';
 
+// Mismo proyecto Supabase que useTrafficSimulation.ts (fejxijloxyxzdshgymvz).
+// Antes apuntaba al proyecto viejo, anterior a la migracion, por lo que esta
+// pagina nunca llegaba a leer datos reales de traffic_lights.
 function getSupabase() {
   if (typeof window === 'undefined') return null;
   try {
     const { createClient } = require('@supabase/supabase-js');
-    return createClient(
-      'https://ipcunenaytijdproskxf.supabase.co',
-      'sb_publishable_tUdmn3h_fIx9zERQweNTyA_HYqThsb4'
-    );
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      || 'https://fejxijloxyxzdshgymvz.supabase.co';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlanhpamxveHl4emRzaGd5bXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNTAwNjUsImV4cCI6MjEwNzkyNjA2NX0.v1LRG8HeJ_UjwMHGzTfR8bYRCAmTlSFryXKxAOpCJT8';
+    return createClient(url, key);
   } catch { return null; }
 }
+
+// URL publica del microservicio de prediccion en Railway. Se usa solo para
+// medir latencia real (GET /health), nunca para leer datos sensibles.
+const PREDICCION_HEALTH_URL = (process.env.NEXT_PUBLIC_PREDICCION_URL
+  || 'https://responsible-victory-production-c29a.up.railway.app') + '/health';
 
 interface TrafficLight {
   intersection_id: string;
@@ -31,7 +40,8 @@ export default function TechnicalDashboard() {
   const { weather, traffic } = useTrafficSimulation();
   const [logs, setLogs]           = useState<string[]>([]);
   const [fitness, setFitness]     = useState<number | null>(null);
-  const [latencia, setLatencia]   = useState<number>(142);
+  const [latencia, setLatencia]   = useState<number | null>(null);
+  const [muestrasLatencia, setMuestrasLatencia] = useState<number>(0);
   const [semaforos, setSemaforos] = useState<TrafficLight[]>([]);
 
   // ── Obtener tiempos optimizados de semaforos ────────────
@@ -72,37 +82,83 @@ export default function TechnicalDashboard() {
     return () => { sb.removeChannel(channel); };
   }, []);
 
-  // ── Latencia variable ───────────────────────────────────
+  // ── Latencia real, medida en vivo desde el navegador ────
+  // Antes era un numero aleatorio (110-170ms) sin relacion con ningun
+  // dato real. Ahora se mide el tiempo de ida y vuelta real de un GET a
+  // /health del servicio de prediccion en Railway, y se reporta el P95
+  // sobre las ultimas 20 mediciones (ventana movil, se refresca cada 5s).
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLatencia(Math.floor(Math.random() * 60) + 110);
-    }, 5000);
+    const muestras: number[] = [];
+
+    const medirLatencia = async () => {
+      const t0 = performance.now();
+      try {
+        await fetch(PREDICCION_HEALTH_URL, { cache: 'no-store' });
+        const rtt = performance.now() - t0;
+        muestras.push(rtt);
+        if (muestras.length > 20) muestras.shift();
+
+        const ordenadas = [...muestras].sort((a, b) => a - b);
+        const idxP95 = Math.min(ordenadas.length - 1, Math.floor(ordenadas.length * 0.95));
+        setLatencia(Math.round(ordenadas[idxP95]));
+        setMuestrasLatencia(muestras.length);
+      } catch {
+        // Si falla el ping (red, servicio dormido, etc.) no se inventa un
+        // numero: se deja el ultimo valor real conocido.
+      }
+    };
+
+    medirLatencia();
+    const interval = setInterval(medirLatencia, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // ── Logs de telemetria ──────────────────────────────────
+  // ── Logs de telemetria (datos reales de Supabase) ───────
+  // Cada linea corresponde a una fila real que acaba de llegar a
+  // traffic_readings (sensor -> ingesta) o traffic_lights (optimizacion).
+  // No se genera ningun mensaje simulado.
   useEffect(() => {
-    const interval = setInterval(() => {
-      const msgs = [
-        '[NET] SYN_ACK de Nodo INT-003 (14ms)',
-        '[ALG] Recalculando rutas optimas...',
-        '[DB] Sincronizando estado de intersecciones...',
-        `[SYS] Clima: ${weather}, Trafico: ${traffic}`,
-        '[NET] Perdida de paquetes 0.01% en Sector 4',
-        '[ALG] Mutacion genetica aplicada: fitness +0.02',
-        '[ML] Prediccion Random Forest completada (F1=0.91)',
-        '[GA] Generacion 50/50 completada',
-        '[DB] Supabase: INSERT traffic_readings OK',
-        '[NET] Railway health check: 3/3 servicios activos',
-      ];
-      const newLog = msgs[Math.floor(Math.random() * msgs.length)];
-      setLogs(prev => {
-        const updated = [...prev, `> ${new Date().toISOString().substring(11, 19)} - ${newLog}`];
-        return updated.slice(-15);
-      });
-    }, 1200);
-    return () => clearInterval(interval);
-  }, [weather, traffic]);
+    const sb = getSupabase();
+    if (!sb) return;
+    let ultimaLectura = new Date(Date.now() - 60_000).toISOString();
+    let ultimoVerde   = ultimaLectura;
+    let activo = true;
+
+    const hora = (iso: string) => new Date(iso).toLocaleTimeString('es-MX', { hour12: false, timeZone: 'America/Mexico_City' });
+
+    const sondear = async () => {
+      try {
+        const [lect, verd] = await Promise.all([
+          sb.from('traffic_readings')
+            .select('intersection_id,vehicles_count,avg_speed_kmh,congestion_level,weather,created_at')
+            .gt('created_at', ultimaLectura).order('created_at', { ascending: true }).limit(20),
+          sb.from('traffic_lights')
+            .select('intersection_id,congestion_level,verde_default,verde_optimo,fitness,optimized_at')
+            .gt('optimized_at', ultimoVerde).order('optimized_at', { ascending: true }).limit(20),
+        ]);
+        const nuevas: { t: string; txt: string }[] = [];
+        for (const r of lect.data ?? []) {
+          ultimaLectura = r.created_at;
+          nuevas.push({ t: r.created_at, txt:
+            `[SENSOR] ${r.intersection_id}: ${r.vehicles_count} veh, ${Number(r.avg_speed_kmh).toFixed(1)} km/h, ${r.congestion_level} (${r.weather})` });
+        }
+        for (const v of verd.data ?? []) {
+          ultimoVerde = v.optimized_at;
+          nuevas.push({ t: v.optimized_at, txt:
+            `[GA] ${v.intersection_id}: verde ${v.verde_default}s -> ${v.verde_optimo}s, fitness ${Number(v.fitness).toLocaleString('es-MX', { maximumFractionDigits: 0 })}` });
+        }
+        if (!activo || nuevas.length === 0) return;
+        nuevas.sort((a, b) => a.t.localeCompare(b.t));
+        setLogs(prev => [...prev, ...nuevas.map(n => `> ${hora(n.t)} - ${n.txt}`)].slice(-15));
+      } catch {
+        // Sin conexion: no se inventan lineas.
+      }
+    };
+
+    sondear();
+    const interval = setInterval(sondear, 3000);
+    return () => { activo = false; clearInterval(interval); };
+  }, []);
 
   const getCongestionColor = (level: string) => {
     switch (level?.toLowerCase()) {
@@ -136,8 +192,8 @@ export default function TechnicalDashboard() {
             <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Precisión IA (F1)</p>
             <BrainCircuit className="w-4 h-4 text-blue-500" />
           </div>
-          <p className="text-2xl font-bold text-blue-600">91.3%</p>
-          <p className="text-slate-400 text-[10px] mt-1">Modelo Random Forest — Meta: &gt;85%</p>
+          <p className="text-2xl font-bold text-blue-600">91.7%</p>
+          <p className="text-slate-400 text-[10px] mt-1">Random Forest, datos sintéticos — Meta: &gt;85%</p>
         </div>
 
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
@@ -145,8 +201,12 @@ export default function TechnicalDashboard() {
             <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Latencia API (P95)</p>
             <Activity className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold text-slate-700">{latencia} ms</p>
-          <p className="text-slate-400 text-[10px] mt-1">Meta: &lt; 200ms</p>
+          <p className="text-2xl font-bold text-slate-700">{latencia !== null ? `${latencia} ms` : '—'}</p>
+          <p className="text-slate-400 text-[10px] mt-1">
+            {latencia !== null
+              ? `en vivo · P95 de ${muestrasLatencia} mediciones reales · meta: < 200ms`
+              : 'midiendo latencia real…'}
+          </p>
         </div>
 
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
