@@ -49,6 +49,7 @@ function createSupabaseClient() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
       || 'https://gnsornvdpdidsyaxqerd.supabase.co';
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      || process.env.NEXT_PUBLIC_SUPABASE_KEY
       || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imduc29ybnZkcGRpZHN5YXhxZXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNDA0NjMsImV4cCI6MjEwODcxNjQ2M30.iFHPkPCHQzdVubdpn-G_SOrzszFbKQDu8bUsKWzmA44';
     return createClient(url, key);
   } catch {
