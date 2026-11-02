@@ -41,15 +41,15 @@ const DEFAULT_NODES: IntersectionData[] = Object.entries(INTERSECTION_CONFIG).ma
 // el acceso real lo controla RLS en la base de datos), pero deben
 // apuntar al proyecto Supabase actual, no a uno viejo/migrado.
 // Configurables por variable de entorno; si no están definidas se
-// usa el proyecto activo (smartflow-gdl-v2) como valor por defecto.
+// usa el proyecto activo (smartflow-gdl) como valor por defecto.
 function createSupabaseClient() {
   if (typeof window === 'undefined') return null;
   try {
     const { createClient } = require('@supabase/supabase-js');
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-      || 'https://fejxijloxyxzdshgymvz.supabase.co';
+      || 'https://gnsornvdpdidsyaxqerd.supabase.co';
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlanhpamxveHl4emRzaGd5bXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNTAwNjUsImV4cCI6MjEwNzkyNjA2NX0.v1LRG8HeJ_UjwMHGzTfR8bYRCAmTlSFryXKxAOpCJT8';
+      || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imduc29ybnZkcGRpZHN5YXhxZXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNDA0NjMsImV4cCI6MjEwODcxNjQ2M30.iFHPkPCHQzdVubdpn-G_SOrzszFbKQDu8bUsKWzmA44';
     return createClient(url, key);
   } catch {
     return null;
